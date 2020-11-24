@@ -2,7 +2,8 @@
 var hubUrl = document.location.pathname + 'ConnectionHub';
 var wsconn = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl, signalR.HttpTransportType.WebSockets)
-    .configureLogging(signalR.LogLevel.None).build();
+    .configureLogging(signalR.LogLevel.Debug)
+    .build();
 
 var peerConnectionConfig = { "iceServers": [{ "url": "stun:stun.l.google.com:19302" }] };
 //    "iceServers": [
@@ -12,6 +13,11 @@ var peerConnectionConfig = { "iceServers": [{ "url": "stun:stun.l.google.com:193
 //        { "urls": "turn:turn-testdrive.cloudapp.net:3478?transport=udp", "username": "redmond", "credential": "redmond123" }
 //    ]
 //};
+
+var webrtcConstraints = { audio: true, video: true };
+var streamInfo = { applicationName: WOWZA_APPLICATION_NAME, streamName: WOWZA_STREAM_NAME, sessionId: WOWZA_SESSION_ID_EMPTY };
+
+var WOWZA_STREAM_NAME = null, connections = {}, localStream = null;
 
 $(document).ready(function () {
     initializeSignalR();
@@ -53,17 +59,36 @@ $(document).ready(function () {
             $("#callstatus").text('Idle');
         }
     });
+
+    $(document).on('click', '#muteBtn', () => {
+        if (localStream == null) {
+            return;
+        }
+
+        const audioTrack = localStream.getAudioTracks()[0]
+
+        audioTrack.enabled = !audioTrack.enabled
+
+        document.querySelector("#muteBtn").innerHTML = 
+            audioTrack.enabled ? "🎤 | Mute" : "x | Unmute";
+    });
 });
 
-var webrtcConstraints = { audio: true, video: false };
-var streamInfo = { applicationName: WOWZA_APPLICATION_NAME, streamName: WOWZA_STREAM_NAME, sessionId: WOWZA_SESSION_ID_EMPTY };
-
-var WOWZA_STREAM_NAME = null, connections = {}, localStream = null;
-
-attachMediaStream = (e) => {
+attachMediaStream = (e, stream) => {
     //console.log(e);
     console.log("OnPage: called attachMediaStream");
+
+    if (stream) {
+        if (e.srcObject !== stream) {
+            e.srcObject = stream;
+            console.log("OnPage: Attached remote stream");
+        }
+
+        return;
+    }
+
     var partnerAudio = document.querySelector('.audio.partner');
+
     if (partnerAudio.srcObject !== e.stream) {
         partnerAudio.srcObject = e.stream;
         console.log("OnPage: Attached remote stream");
@@ -218,6 +243,11 @@ const callbackUserMediaSuccess = (stream) => {
     console.log("WebRTC: got media stream");
     localStream = stream;
 
+    const myVideo = document.querySelector('.video.mine')
+
+    myVideo.muted = true;
+    myVideo.srcObject = stream;
+
     const audioTracks = localStream.getAudioTracks();
     if (audioTracks.length > 0) {
         console.log(`Using Audio device: ${audioTracks[0].label}`);
@@ -234,14 +264,18 @@ const callbackRemoveStream = (connection, evt) => {
     // Clear out the partner window
     var otherAudio = document.querySelector('.audio.partner');
     otherAudio.src = '';
+
+    var otherVideo = document.querySelector('.video.partner');
+    otherVideo.src = '';
 }
 
 const callbackAddStream = (connection, evt) => {
     console.log('WebRTC: called callbackAddStream');
 
     // Bind the remote stream to the partner window
-    //var otherVideo = document.querySelector('.video.partner');
-    //attachMediaStream(otherVideo, evt.stream); // from adapter.js
+    var otherVideo = document.querySelector('.video.partner');
+
+    attachMediaStream(otherVideo, evt.stream); // from adapter.js
     attachMediaStream(evt);
 }
 
